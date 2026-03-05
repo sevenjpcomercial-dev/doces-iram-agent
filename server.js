@@ -62,39 +62,37 @@ app.post("/webhook", async (req, res) => {
 
     // Recupera histórico da conversa ou inicia novo
     if (!conversas[telefone]) conversas[telefone] = [];
-    conversas[telefone].push({ role: "user", content: mensagem });
+    conversas[telefone].push({ role: "user", parts: [{ text: mensagem }] });
 
-    // Limita histórico a 20 mensagens para não estourar tokens
+    // Limita histórico a 20 mensagens
     if (conversas[telefone].length > 20) {
       conversas[telefone] = conversas[telefone].slice(-20);
     }
 
-    // Chama a API da Anthropic (Agente Iram)
-    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 600,
-        system: SYSTEM_PROMPT,
-        messages: conversas[telefone],
-      }),
-    });
+    // Chama a API do Google Gemini (gratuita)
+    const aiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: conversas[telefone],
+          generationConfig: { maxOutputTokens: 600, temperature: 0.7 },
+        }),
+      }
+    );
 
     const aiData = await aiResponse.json();
-    const resposta = aiData?.content?.[0]?.text;
+    const resposta = aiData?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!resposta) {
-      console.error("Erro na API Anthropic:", aiData);
+      console.error("Erro na API Gemini:", JSON.stringify(aiData));
       return res.json({ ok: false });
     }
 
     // Salva resposta no histórico
-    conversas[telefone].push({ role: "assistant", content: resposta });
+    conversas[telefone].push({ role: "model", parts: [{ text: resposta }] });
 
     console.log(`✅ Respondendo ${telefone}: ${resposta.substring(0, 80)}...`);
 
